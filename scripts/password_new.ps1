@@ -1,51 +1,88 @@
-# ====== Settings ======
-$OutCsv = ".\local_user_passwords.csv"
-$Length = 20  # password length
+# Change-LocalUserPasswords.ps1
+# Outputs CSV: username,pass
+# Requires: PowerShell 5.1+ and running as Administrator.
 
-# Character sets (exclude confusing chars if you want)
-$Lower = "abcdefghijklmnopqrstuvwxyz"
-$Upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-$Digits = "0123456789"
-$Symbols = "!@#$%^&*()-_=+[]{};:,.?/"
-
-$All = ($Lower + $Upper + $Digits + $Symbols).ToCharArray()
+param(
+  [string]$OutCsv = ".\changed_passwords.csv",
+  [int]$PasswordLength = 16
+)
 
 function New-RandomPassword {
-    param([int]$Len = 20)
+  param([int]$Length = 16)
 
-    # Ensure complexity: at least 1 from each set
-    $pwChars = @()
-    $pwChars += $Lower[(Get-Random -Minimum 0 -Maximum $Lower.Length)]
-    $pwChars += $Upper[(Get-Random -Minimum 0 -Maximum $Upper.Length)]
-    $pwChars += $Digits[(Get-Random -Minimum 0 -Maximum $Digits.Length)]
-    $pwChars += $Symbols[(Get-Random -Minimum 0 -Maximum $Symbols.Length)]
+  # Simple strong-ish charset (avoids quotes/backticks to reduce CSV/shell issues)
+  $lower = "abcdefghjkmnpqrstuvwxyz"
+  $upper = "ABCDEFGHJKMNPQRSTUVWXYZ"
+  $digits = "23456789"
+  $special = "!@#$%^&*()-_=+[]{}.,?"
 
-    # Fill the rest
-    for ($i = $pwChars.Count; $i -lt $Len; $i++) {
-        $pwChars += $All[(Get-Random -Minimum 0 -Maximum $All.Length)]
-    }
+  $all = ($lower + $upper + $digits + $special).ToCharArray()
 
-    # Shuffle so the first 4 aren't predictable
-    -join ($pwChars | Sort-Object { Get-Random })
+  # Ensure at least one char from each set
+  $pwdChars = @()
+  $pwdChars += ($lower.ToCharArray() | Get-Random -Count 1)
+  $pwdChars += ($upper.ToCharArray() | Get-Random -Count 1)
+  $pwdChars += ($digits.ToCharArray() | Get-Random -Count 1)
+  $pwdChars += ($special.ToCharArray() | Get-Random -Count 1)
+
+  $remaining = $Length - $pwdChars.Count
+  if ($remaining -lt 0) { $remaining = 0 }
+
+  $pwdChars += ($all | Get-Random -Count $remaining)
+
+  # Shuffle
+  -join ($pwdChars | Sort-Object { Get-Random })
 }
 
-# Get local users (skip disabled + built-in/service-ish accounts)
-$Users = Get-LocalUser |
-    Where-Object {
-        $_.Enabled -eq $true -and
-        $_.Name -notmatch '^(Administrator|Guest|DefaultAccount|WDAGUtilityAccount)$'
-    } |
-    Select-Object -ExpandProperty Name
-
-# Generate output objects
-$Rows = foreach ($u in $Users) {
-    [pscustomobject]@{
-        username = $u
-        password = (New-RandomPassword -Len $Length)
-    }
+# Check admin
+$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+  Write-Error "Please run this script as Administrator."
+  exit 1
 }
 
-# Write CSV with header: username,password
-$Rows | Export-Csv -Path $OutCsv -NoTypeInformation -Encoding UTF8
+Write-Host "Enter local usernames one per line. Press ENTER on a blank line to finish." -ForegroundColor Cyan
 
-Write-Host "Wrote: $OutCsv"
+$usernames = @()
+while ($true) {
+  $u = Read-Host "Username"
+  if ([string]::IsNullOrWhiteSpace($u)) { break }
+  $usernames += $u.Trim()
+}
+
+if ($usernames.Count -eq 0) {
+  Write-Error "No usernames provided."
+  exit 1
+}
+
+$results = @()
+
+foreach ($username in $usernames) {
+  try {
+    # Verify local user exists
+    $null = Get-LocalUser -Name $username -ErrorAction Stop
+
+    $newPass = New-RandomPassword -Length $PasswordLength
+    $secure = ConvertTo-SecureString $newPass -AsPlainText -Force
+
+    Set-LocalUser -Name $username -Password $secure -ErrorAction Stop
+
+    $results += [pscustomobject]@{
+      username = $username
+      pass     = $newPass
+    }
+
+    Write-Host "Changed password for: $username" -ForegroundColor Green
+  }
+  catch {
+    Write-Warning "Skipped '$username' (not found or failed): $($_.Exception.Message)"
+  }
+}
+
+# Write CSV exactly as: username,pass (no extra columns)
+"username,pass" | Out-File -FilePath $OutCsv -Encoding utf8
+foreach ($row in $results) {
+  "$($row.username),$($row.pass)" | Out-File -FilePath $OutCsv -Append -Encoding utf8
+}
+
+Write-Host "Done. CSV saved to: $OutCsv" -ForegroundColor Cyan
