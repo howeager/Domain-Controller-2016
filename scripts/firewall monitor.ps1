@@ -1,8 +1,9 @@
 # DC Firewall Configuration and Active Connection Monitor
 # Run this script as Administrator
+#This Script is for a 2016 DC Firewall Configuration
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "DC FIREWALL CONFIGURATION" -ForegroundColor Cyan
+Write-Host "2016 DC FIREWALL CONFIGURATION" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 # Enables a stateful firewall
@@ -18,8 +19,8 @@ Write-Host "[3/8] Allowing ping (ICMPv4) requests..." -ForegroundColor Yellow
 netsh advfirewall firewall add rule name="ping" dir=in action=allow protocol=icmpv4
 
 # Allows DNS requests to the domain controller
-Write-Host "[4/8] Allowing DNS requests to 192.168.220.25..." -ForegroundColor Yellow
-netsh advfirewall firewall add rule name="dns" dir=out action=allow remoteport=53 protocol=udp remoteip=192.168.220.25
+Write-Host "[4/8] Allowing DNS requests to 192.168.220.17..." -ForegroundColor Yellow
+netsh advfirewall firewall add rule name="dns" dir=out action=allow remoteport=53 protocol=udp remoteip=192.168.1.17
 
 # Enables logging of dropped connections
 Write-Host "[5/8] Enabling logging for dropped connections..." -ForegroundColor Yellow
@@ -29,7 +30,16 @@ netsh advfirewall set allprofiles logging droppedconnections enable
 Write-Host "[6/8] Enabling Active Directory Domain Services rules..." -ForegroundColor Yellow
 netsh advfirewall firewall set rule group="Active Directory Domain Services" new enable=yes
 
-Write-Host "[7/8] Firewall configuration complete!`n" -ForegroundColor Green
+Write-Host "[7/8] Blocking Port 135!`n" -ForegroundColor Green
+netsh advfirewall firewall add rule name="block_port_135" dir=in action=block protocol=tcp localport=135
+
+Write-Host "[8/8] Blocking Port 445!`n" -ForegroundColor Green
+#Only allow if there the IIS Servers have interdependencies on it
+#netsh advfirewall firewall add rule name="block_port_445" dir=in action=block protocol=tcp localport=445
+
+
+
+
 
 # Wait a moment for connections to stabilize
 Start-Sleep -Seconds 2

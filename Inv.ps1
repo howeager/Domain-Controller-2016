@@ -1,5 +1,3 @@
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Unrestricted -Force
-
 $Error.Clear()
 $ErrorActionPreference = "SilentlyContinue"
 
