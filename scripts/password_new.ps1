@@ -1,91 +1,51 @@
-<# 
-Simple Local User Password Changer (Server 2016 / PS 5.1)
+# ====== Settings ======
+$OutCsv = ".\local_user_passwords.csv"
+$Length = 20  # password length
 
-- Resets passwords for selected local users
-- Outputs a CSV with plaintext passwords (handle carefully)
+# Character sets (exclude confusing chars if you want)
+$Lower = "abcdefghijklmnopqrstuvwxyz"
+$Upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+$Digits = "0123456789"
+$Symbols = "!@#$%^&*()-_=+[]{};:,.?/"
 
-TIP: Run as Admin
-#>
+$All = ($Lower + $Upper + $Digits + $Symbols).ToCharArray()
 
-function New-SecurePassword {
-    param([int]$Length = 16)
+function New-RandomPassword {
+    param([int]$Len = 20)
 
-    if ($Length -lt 12) { throw "Use Length >= 12 for better security." }
+    # Ensure complexity: at least 1 from each set
+    $pwChars = @()
+    $pwChars += $Lower[(Get-Random -Minimum 0 -Maximum $Lower.Length)]
+    $pwChars += $Upper[(Get-Random -Minimum 0 -Maximum $Upper.Length)]
+    $pwChars += $Digits[(Get-Random -Minimum 0 -Maximum $Digits.Length)]
+    $pwChars += $Symbols[(Get-Random -Minimum 0 -Maximum $Symbols.Length)]
 
-    $upper   = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    $lower   = 'abcdefghijklmnopqrstuvwxyz'
-    $digits  = '0123456789'
-    $symbols = '!@#$%^&*()-_=+[]{}'
-    $all     = $upper + $lower + $digits + $symbols
+    # Fill the rest
+    for ($i = $pwChars.Count; $i -lt $Len; $i++) {
+        $pwChars += $All[(Get-Random -Minimum 0 -Maximum $All.Length)]
+    }
 
-    # Guarantee complexity (1 from each set)
-    $chars = @(
-        ($upper.ToCharArray()   | Get-Random -Count 1)
-        ($lower.ToCharArray()   | Get-Random -Count 1)
-        ($digits.ToCharArray()  | Get-Random -Count 1)
-        ($symbols.ToCharArray() | Get-Random -Count 1)
-    )
-
-    $remaining = $Length - $chars.Count
-    $bytes = New-Object byte[] $remaining
-    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
-
-    foreach ($b in $bytes) { $chars += $all[$b % $all.Length] }
-
-    # Shuffle (ordering only)
-    -join ($chars | Sort-Object { Get-Random })
+    # Shuffle so the first 4 aren't predictable
+    -join ($pwChars | Sort-Object { Get-Random })
 }
 
-# ====== CONFIG ======
-# Option A: specify users explicitly (recommended)
-$Usernames = @(
-    "user1",
-    "user2"
-)
+# Get local users (skip disabled + built-in/service-ish accounts)
+$Users = Get-LocalUser |
+    Where-Object {
+        $_.Enabled -eq $true -and
+        $_.Name -notmatch '^(Administrator|Guest|DefaultAccount|WDAGUtilityAccount)$'
+    } |
+    Select-Object -ExpandProperty Name
 
-# Option B: uncomment to target ALL enabled local users except built-ins
-# $Usernames = (Get-LocalUser |
-#     Where-Object {
-#         $_.Enabled -eq $true -and
-#         $_.Name -notin @("Administrator","Guest","DefaultAccount","WDAGUtilityAccount")
-#     } |
-#     Select-Object -ExpandProperty Name)
-
-$PasswordLength = 16
-$CsvPath = "C:\LocalUserPasswords.csv"
-# ====================
-
-$results = @()
-
-foreach ($u in $Usernames) {
-    try {
-        $pw = New-SecurePassword -Length $PasswordLength
-        $secure = ConvertTo-SecureString $pw -AsPlainText -Force
-
-        # Reset password
-        Set-LocalUser -Name $u -Password $secure
-
-        $results += [pscustomobject]@{
-            Username = $u
-            Password = $pw
-            Status   = "Success"
-            Note     = ""
-        }
-
-        Write-Host "Updated $u"
-    }
-    catch {
-        $results += [pscustomobject]@{
-            Username = $u
-            Password = ""
-            Status   = "Failed"
-            Note     = $_.Exception.Message
-        }
-
-        Write-Host "Failed $u: $($_.Exception.Message)"
+# Generate output objects
+$Rows = foreach ($u in $Users) {
+    [pscustomobject]@{
+        username = $u
+        password = (New-RandomPassword -Len $Length)
     }
 }
 
-$results | Export-Csv -Path $CsvPath -NoTypeInformation -Encoding UTF8
-Write-Host "Done. CSV saved to: $CsvPath"
+# Write CSV with header: username,password
+$Rows | Export-Csv -Path $OutCsv -NoTypeInformation -Encoding UTF8
+
+Write-Host "Wrote: $OutCsv"
