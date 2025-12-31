@@ -14,6 +14,8 @@ function Set-RegDword($path, $name, $value) {
 }
 
 Write-Host "[*] Disabling LM hash storage..." -ForegroundColor Cyan
+
+
 Set-RegDword "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" "NoLMHash" 1
 
 Write-Host "[*] Enabling NTLM auditing..." -ForegroundColor Cyan

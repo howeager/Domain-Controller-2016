@@ -37,6 +37,8 @@ Write-Host "[8/8] Blocking Port 445!`n" -ForegroundColor Green
 #Only allow if there the IIS Servers have interdependencies on it
 #netsh advfirewall firewall add rule name="block_port_445" dir=in action=block protocol=tcp localport=445
 
+Write-Host "[9/9] Enabling logging to file..." -ForegroundColor Yellow
+netsh advfirewall set allprofiles logging filename "C:\pfirewall.log"
 
 
 
