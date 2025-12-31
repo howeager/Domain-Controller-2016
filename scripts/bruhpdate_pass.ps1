@@ -39,10 +39,6 @@ foreach ($user in $users) {
     try {
         # Change the user's password
         Set-LocalUser -Name $user -Password $securePass
-
-        # Output to console
-        Write-Output "Bruhpdated Completed"
-
         # Output to CSV
         "$user,$password" | Out-File $output -Append
     }
